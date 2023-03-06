@@ -55,10 +55,12 @@ void loop() {
 
   /* start recording time when sun is up
   if(lightLev > LIGHT) {
-    currentMillis = millis();
+    upMillis = millis();
     WE MAY NEED A DS1307 MODULE instead
   }
-    prevMillis = prevMillis + currentMillis;
+    downMillis = millis();
+    float upTime = downMillis - upMillis;
+    float totalTime = totalTime + upTime
   */
 
   /////// MOISTURE SECTION ///////
