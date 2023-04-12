@@ -67,7 +67,7 @@ void setup() {
     while (1);
   }
 
-  BLE.setLocalName("MKR WiFi 1010");                                        // Setting a name that will appear when scanning for Bluetooth® devices
+  BLE.setLocalName("MKR WiFi 1010n");                                        // Setting a name that will appear when scanning for Bluetooth® devices
   BLE.setAdvertisedService(newService);
 
   newService.addCharacteristic(switchChar);                                 // add characteristics to a service
@@ -84,6 +84,7 @@ void setup() {
   delay (2000);                                                             // give time to measure
 }
 
+////////////////////////////
 void loop() {
   BLEDevice central = BLE.central();                                        // wait for a Bluetooth® Low Energy central
 
@@ -100,42 +101,41 @@ void loop() {
 
         previousMillis = currentMillis;
 
+        Serial.println(currentMillis);                                      // check time 
+/*
         /////// ACIDITY ///////
         //acidVal = analogRead(acidPin);
-        //Serial.print("Acidity: ");            // test in serial monitor
-        //Serial.println(acidVal);
         digitalWrite(DE, HIGH);                                                   // Sets the max485 to send data
         digitalWrite(RE, HIGH);                                                   // Sets the max485 to send data
 
         delay(10);
 
         for (int j = 0; j < 8; j++) {
-          send = pH[j];                                         // 
+          send = pH[j];                                                       // send request to the sensor
           mySerial.write(send);
           Serial.print(send, HEX);
         }
 
         delay(10);
 
-        digitalWrite(DE, LOW);//Sets the max485 to recieve data
-        digitalWrite(RE, LOW);//Sets the max485 to recieve data
+        digitalWrite(DE, LOW);                                                // Sets the max485 to recieve data
+        digitalWrite(RE, LOW);                                                // Sets the max485 to recieve data
 
         while (mySerial.available()) {    
           Serial.println("Receive data:");
 
-          for (byte i = 0; i < 7; i++) {                                        //Use ten to over read extra data in register
+          for (byte i = 0; i < 7; i++) {                                     // Use ten to over read extra data in register
             values[i] = mySerial.read();
             Serial.print(values[i], HEX);
           }
+
         Serial.println();
-    }
+        }
 
-  acidVal = ((values[3] << 8) | (values[4])) / 10;
-  Serial.print("pH: ");
-  Serial.println(acidVal);
-
-        Serial.println(currentMillis);                                      // check time 
-
+        acidVal = ((values[3] << 8) | (values[4])) / 10;
+        Serial.print("pH: ");
+        Serial.println(acidVal);
+*/
         /////// TEMPERATURE ///////
         tempVal = dht.readTemperature(true);
         Serial.print("Temperature = ");
@@ -153,7 +153,7 @@ void loop() {
 
         if(lightLev > LIGHT) {
           upMillis = millis();
-        }else{
+        }else {
           downMillis = millis();  
         }
         
