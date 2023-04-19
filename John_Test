@@ -108,7 +108,7 @@ void pH_Sensor() {
   for (int j = 0; j < 8; j++) {
     send = pH[j];                                                       // send request to the sensor
     mySerial.write(send);
-    Serial.print(send, HEX);
+    //Serial.print(send, HEX);
   }
   
   delay(10);
