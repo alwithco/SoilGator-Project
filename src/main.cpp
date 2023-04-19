@@ -124,10 +124,10 @@ void loop() {
 
         Serial.println(currentMillis);                                      // check time 
 
-        //temp_sensor();
-        //light_sensor();
-        //moist_sensor();
-        pH_sensor();
+        temp_sensor();
+        light_sensor();
+        moist_sensor();
+        //pH_sensor();
 
         Serial.println("");        
       }
@@ -161,7 +161,7 @@ void temp_sensor() {
 
 void moist_sensor() {
   moistLev = analogRead(moistPin);
-  moistLev = map(moistLev, 0, 1023, 0, 100);
+  moistLev = map(moistLev, 1023, 0, 0, 100);
   Serial.print("Moisture: ");        // test in serial monitor
   Serial.print(moistLev);
   Serial.println("%"); 
@@ -175,8 +175,8 @@ void light_sensor() {
                         
     Serial.print("Light: ");                                          // test in serial monitor
     Serial.println(lightLev);
-  while (alarmFlag) {                                                    // alarmFlag is set after 8 hours
 
+  while (alarmFlag) {                                                    // alarmFlag is set after 8 hours
 
     if(lightLev > LIGHT) {                                            // count time when light is high
       upMillis = millis();
