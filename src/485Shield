@@ -1,0 +1,47 @@
+#include <ArduinoRS485.h>
+#include <ArduinoModbus.h>
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+  //Start Modbus
+  if (!ModbusRTUClient.begin(9600)) {
+    Serial.println("Failed to start Modbus RTU Client!");
+    while (1);
+  }
+}
+
+void loop()
+{
+  float temp = 0.;
+  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, 0x0001, 1)) {
+    Serial.print("failed to read current! ");
+    Serial.println(ModbusRTUClient.lastError());
+  }else{
+    uint16_t word1 = ModbusRTUClient.read();
+    Serial.print("Word1: ");
+    Serial.println(word1);
+    temp = word1/10.0;
+    Serial.print("temp: ");
+    Serial.println(temp);    
+  }  
+  /*float temp = readTemperature();
+  Serial.print("Temperature: ");
+  Serial.println(temp);*/
+
+  delay(5000);
+}
+
+/*float readTemperature(){
+  float temp = 0.;
+  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, 0x0003, 2)) {
+    Serial.print("failed to read current! ");
+    Serial.println(ModbusRTUClient.lastError());
+  }else{
+    uint8_t byte1 = ModbusRTUClient.read();
+    uint8_t byte2 = ModbusRTUClient.read();
+    int16_t tempval = byte1 << 8 | byte2;
+    temp = tempval/10.0;
+  }
+  return temp;
+}*/
