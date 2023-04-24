@@ -1,0 +1,140 @@
+#include <ArduinoBLE.h>
+#include <ArduinoRS485.h>
+#include <ArduinoModbus.h>
+
+// creating the service
+BLEService newService("180A");
+
+// creating the Value characteristics
+BLEFloatCharacteristic pHdata("2A58", BLERead);
+BLEFloatCharacteristic Tempdata("2A57", BLERead);
+BLEFloatCharacteristic Moistdata("2A56", BLERead);
+BLEFloatCharacteristic Lightdata("2A55", BLERead);
+
+// holding register addresses
+const word humidity = 0x0000;
+const word temperature = 0x0001;
+const word acidity = 0x0003;
+
+const int photo = A1;
+
+long previousMillis = 0;
+
+void setup() 
+{
+  Serial.begin(9600);
+  // starts Bluetooth if we open the serial monitor.
+  //while (!Serial);
+  //Start Modbus
+  if (!ModbusRTUClient.begin(9600)) {
+    Serial.println("Failed to start Modbus RTU Client!");
+    while (1);
+  }
+  //initialize ArduinoBLE library
+  if (!BLE.begin()) {
+    Serial.println("starting Bluetooth® Low Energy failed!");
+    while (1);
+  }
+
+  BLE.setLocalName("SoilGator"); //Setting a name that will appear when scanning for Bluetooth® devices
+  BLE.setAdvertisedService(newService);
+
+  //add characteristics to a service
+  newService.addCharacteristic(Tempdata); 
+  newService.addCharacteristic(pHdata);
+  newService.addCharacteristic(Moistdata); 
+  newService.addCharacteristic(Lightdata);
+
+  // adding the service
+  BLE.addService(newService);  
+
+  //set initial value for characteristics
+  Tempdata.writeValue(0); 
+  pHdata.writeValue(0);
+  Moistdata.writeValue(0);
+  Lightdata.writeValue(0);
+
+  BLE.advertise(); //start advertising the service
+  Serial.println(" Bluetooth® device active, waiting for connections...");
+}
+
+void loop() 
+{
+  BLEDevice central = BLE.central(); // wait for a Bluetooth® Low Energy central
+
+  if (central) {  // if a central is connected to the peripheral
+    Serial.print("Connected to central: ");
+    Serial.println(central.address()); // print the central's BT address
+    
+    // check the sensor values
+    // while the central is connected:
+    while (central.connected()) {
+      long currentMillis = millis();
+      
+      if (currentMillis - previousMillis >= 2000) // if 5s have passed, we check the sensors
+      { 
+        previousMillis = currentMillis;
+
+        float temp = readTemperature();
+        Tempdata.writeValue(temp);
+        float acid = readpH();
+        pHdata.writeValue(acid);
+        float moist = readMoisture();
+        Moistdata.writeValue(moist);
+        float light = readLight();
+        Lightdata.writeValue(light);
+      }
+    }
+    
+    Serial.print("Disconnected from central: ");
+    Serial.println(central.address());
+  }
+
+}
+
+float readTemperature()
+{
+  float temp = 0.;
+  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, temperature, 1)) {
+    Serial.print("failed to read value: ");
+    Serial.println(ModbusRTUClient.lastError());
+  }else{
+    uint16_t word1 = ModbusRTUClient.read();
+    temp = ((word1*0.18) + 32);   // Converted to Farenheit
+  }  
+  return temp;
+}
+
+float readpH()
+{
+  float acid = 0.;
+  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, acidity, 1)) {
+    Serial.print("failed to read value: ");
+    Serial.println(ModbusRTUClient.lastError());
+  }else{
+    uint16_t word1 = ModbusRTUClient.read();
+    acid = word1/10.0;   
+  }  
+  return acid;
+}
+
+float readMoisture()
+{
+  float moist = 0.;
+  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, humidity, 1)) {
+    Serial.print("failed to read value: ");
+    Serial.println(ModbusRTUClient.lastError());
+  }else{
+    uint16_t word1 = ModbusRTUClient.read();
+    moist = word1/10.0;   
+  }  
+  return moist;
+}
+
+float readLight()
+{
+  float light = 0.;
+  int lightval = analogRead(photo);
+  light = lightval/10.23;
+  return light;
+}
