@@ -6,42 +6,44 @@
 #include <ArduinoRS485.h>
 #include <ArduinoModbus.h>
 
-#define tempPin 7                                                         // digital pin for temperature
-#define lightPin A1                                                       // analog pin for photoresistor
-#define moistPin A2                                                       // analog pin for moisture
+#define pinTemp 7                                                         // digital pin for temperature
+#define pinLight A1                                                       // analog pin for photoresistor
+#define pinMoist A2                                                       // analog pin for moisture
+#define DE 6                                                              // RX/TX digital pin
 
 #define DHTTYPE DHT11                                                     // assigns DHT Type the program is using
 #define LIGHT 750                                                         // tentative value for shade
 #define FULL 7000
 #define SHADE 3000
-#define DE 6                                                              // RX/TX digital pin
+#define DATASIZE 20
 
 /* OBJECT INITIALIZATIONS */
-BLEService newService("180A");                                            // creating the service
+BLEService newService("180A");                                            // create the service
 BLEUnsignedCharCharacteristic randomReading("2A58", BLERead | BLENotify); // creating the Analog Value characteristic
 BLEByteCharacteristic switchChar("2A57", BLERead | BLEWrite);             // creating the LED characteristic
 
-/*
-BLEUnsignedCharCharacteristic pHdata("2A58", BLERead | BLENotify);
-BLEUnsignedCharCharacteristic Tempdata("2A57", BLERead | BLENotify);
-BLEUnsignedCharCharacteristic Moistdata("2A56", BLERead | BLENotify);
-BLEUnsignedCharCharacteristic Lightdata("2A55", BLERead | BLENotify);
-*/
+BLEFloatCharacteristic dataTemp("2A58", BLERead);                         // create analog characteristics for each measurement to send
+BLEFloatCharacteristic dataMoist("2A57", BLERead);
+BLEFloatCharacteristic dataLight("2A56", BLERead);
+BLEFloatCharacteristic dataAcid("2A55", BLERead);
 
 Uart mySerial (&sercom3, 1, 0, SERCOM_RX_PAD_1, UART_TX_PAD_0);           // initialize Uart pins
 
 RTCZero rtc;                                                              // initialize RTC object
-DHT dht(tempPin, DHTTYPE);                                                // initialize DHT object
+DHT dht(pinTemp, DHTTYPE);                                                // initialize DHT object
 
 /* GLOBAL VARIABLE INITIALIZATIONS*/
 const byte seconds = 0;
 const byte minutes = 0;
 const byte hours = 0;
+const byte day = 0;
+const byte month = 0;
+const byte year = 0;
 
-float acidVal = 0;
-float tempVal = 0;              
-float lightLev = 0;
-float moistLev = 0.0;
+float valueTemp = 0;              
+float valueMoist = 0;
+float valueLight = 0;
+float valueAcid = 0;
 
 unsigned long currentMillis = 0;                                           
 unsigned long previousMillis = 0;
@@ -56,16 +58,34 @@ volatile bool alarmFlag = false;                                          // ini
 byte values[10];
 byte send = 0;
 
-const byte pH[] = {0x01, 0x03, 0x00, 0x0d, 0x00, 0x01, 0x15, 0xC9};       // dependent on sensor
+const byte pH[] = {0x01, 0x03, 0x00, 0x0d, 0x00, 0x01, 0x15, 0xC9};       // sensor registers
+
+String plantName[DATASIZE] = {"Bugbane", "Carrots", "Corn", "Cucumber", "Daffodils", "Daisies", "Dayliyly", "Garlic", "Hollyhocks", "Lavender", "Lettuce", "Lily of the Valley", "Marigold", "Onion", "Peony", "Poppies", "Potatoes", "Rose", "Squash", "Sunflower"};
+float minPH[DATASIZE] = {5, 5.5, 5.5, 5.5, 6, 6, 6, 5.5, 6, 6, 6, 7.1, 5.5, 6, 6, 7, 4.8, 6, 5.5, 6};
+float maxPH[DATASIZE] = {6, 6.5, 7.5, 7, 6.5, 8, 8, 8, 8, 7.5, 7, 8, 7.5, 7, 7.5, 8, 6.5, 7, 7, 7.5};
+int minTemp[DATASIZE] = {55, 50, 32, 75, 60, 70, 65, 32, 55, 68, 60, 60, 40, 55, 32, 50, 65, 60, 50, 70};
+
+typedef struct {
+  char name;
+  float acidMin;
+  float acidMax;
+  int tempMin;
+  int tempMax;
+  char lightTag;                                                          // either f = full (>750); p = partial; s = shade (<400)
+  char moistTag;                                                          // either m = moist (>30); p = partial; d = dry (<20)
+} plantData;
+
+plantData plant[20];                                                      // struct array with 20 plant info
 
 /* FUNCTION PROTOTYPES */
 void SERCOM3_Handler();                                                   // attach the interrupt handler to the SERCOM
 void alarmMatch();
 
-void temp_sensor();
-void light_sensor();
-void moist_sensor();
-void pH_sensor();
+void setPlantInfo();
+float readTemp();
+float readMoist();
+float readLight();
+float readAcid();
 
 /* SETUP FUNCTION */
 void setup() {
@@ -74,7 +94,7 @@ void setup() {
   dht.begin();
   rtc.begin(); 
   
-  pinMode(DE, OUTPUT);
+  pinMode(DE, OUTPUT);                                                    // set communication direction pin as output
 
   /* SETUP: RTC */
   rtc.setTime(hours, minutes, seconds);
@@ -92,38 +112,32 @@ void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);                                           // initialize the built-in LED pin to indicate when a central is connected
 
-  if (!BLE.begin()) {
+  if (!BLE.begin()) {                                                     // fail case for Bluetooth connection 
     Serial.println("starting Bluetooth® Low Energy failed!");
     while (1);
   }
 
-  BLE.setLocalName("MKR WiFi 1010");                                      // name that will appear when scanning for Bluetooth® devices
+  BLE.setLocalName("SoilGatorRS485");                                     // name that will appear when scanning for Bluetooth® devices
   BLE.setAdvertisedService(newService);
   newService.addCharacteristic(switchChar);                               // add characteristics to a service
   newService.addCharacteristic(randomReading);
-  /*
-  newService.addCharacteristic(Tempdata); 
-  newService.addCharacteristic(pHdata);
-  newService.addCharacteristic(Moistdata); 
-  newService.addCharacteristic(Lightdata);
-  */
-  BLE.addService(newService);                                             // adding the service
+  
+  newService.addCharacteristic(dataTemp); 
+  newService.addCharacteristic(dataMoist); 
+  newService.addCharacteristic(dataLight);
+  newService.addCharacteristic(dataAcid);
+  
+  BLE.addService(newService);                                             // add the service
   switchChar.writeValue(0);                                               // set initial value for characteristics
   randomReading.writeValue(0);
-  /*
-  Tempdata.writeValue(0); 
-  pHdata.writeValue(0);
-  Moistdata.writeValue(0);
-  Lightdata.writeValue(0);
-  */
+  
+  dataTemp.writeValue(0); 
+  dataMoist.writeValue(0);
+  dataLight.writeValue(0);
+  dataAcid.writeValue(0);
+  
   BLE.advertise();                                                        // start advertising the service
   Serial.println("Bluetooth® device active, waiting for connections...");
-
-  /* SETUP: MODBUS */
-  if (!ModbusRTUClient.begin(9600)) {
-    Serial.println("Failed to start Modbus RTU Client!");
-    while (1);
-  }
 
   delay (2000);                                                           // give time to measure
 }
@@ -141,29 +155,29 @@ void loop() {
 
       currentMillis = millis();
 
-      if (currentMillis - previousMillis >= 2000) {                       // print every 200ms
+      if (currentMillis - previousMillis >= 2000) {                       // print every 200ms; may change to 15 min
 
         previousMillis = currentMillis;
 
-        Serial.println(currentMillis);                                    // check time; testing only 
-
-        //temp_sensor();
-        light_sensor();
-        //moist_sensor();
-        //pH_sensor();
-
-        /*
-        float temp = readTemperature();
-        Tempdata.writeValue(temp);
-        float acid = readpH();
-        pHdata.writeValue(acid);
-        float moist = readMoisture();
-        Moistdata.writeValue(moist);
-        float light = readLight();
-        Lightdata.writeValue(light);
+        /* Print Date
+        print2digits(rtc.getMonth());
+        Serial.print("/");
+        print2digits(rtc.getDay());
+        Serial.print("/");
+        print2digits(rtc.getYear());
+        Serial.print(" ");
         */
 
-        Serial.println("");        
+        Serial.println(currentMillis);                                    // check time; testing only 
+
+        float temp = readTemp();
+        dataTemp.writeValue(temp);
+        float acid = readAcid();
+        dataAcid.writeValue(acid);
+        float moist = readMoist();
+        dataMoist.writeValue(moist);
+        float light = readLight();
+        dataLight.writeValue(light);      
       }
     }     
 
@@ -185,55 +199,61 @@ void alarmMatch()
   alarmFlag = true;
 }
 
-void temp_sensor() {
-  tempVal = dht.readTemperature(true);                                    // set true to measure in farenheit
-  Serial.print("Temperature = ");
-  Serial.print(tempVal);
-  Serial.print(char(176));
-  Serial.println("F");
+void getDate () {
+
 }
 
-void moist_sensor() {
-  moistLev = analogRead(moistPin);
-  Serial.println(moistLev);
-  moistLev = map(moistLev, 1023, 0, 0, 100);                              // inverted to properly show humidity
-
-  Serial.print("Moisture: ");                                             // test in serial monitor
-  Serial.print(moistLev); Serial.println("%"); 
+void print2digits(int number) {
+  if (number < 10) {
+    Serial.print("0"); // print a 0 before if the number is < than 10
+  }
+  Serial.print(number);
 }
 
-void light_sensor() {
-  //highDuration = 0;
-  lightLev = analogRead(lightPin);                       
-  Serial.print("Light: ");                                                // test in serial monitor
-  Serial.println(lightLev);
+void setPlantInfo() {
+  for (int i = 0; i < 20; i++) {
+    plant[i].name = {};
+    plant[i].tempMin = {}; 
+    plant[i].tempMax = {};
+    plant[i].moistTag = {};
+    plant[i].lightTag = {};  
+    plant[i].acidMin = {}; 
+    plant[i].acidMax = {}; 
+  }
 
-  /*
-  float light = 0.;
-  int lightval = analogRead(photo);
-  light = lightval/10.23;
-  return light;
-  */
+}
 
-  if (alarmFlag == false) {                                               // while flag is false, continue to monitor; alarmFlag is set true after 8 hours
-    if((lightLev > LIGHT) & (upMillis == 0)) {                            // count time only when light is high and when there's no record yet
+float readTemp() {
+  valueTemp = dht.readTemperature(true);                                    // set true to measure in farenheit
+  if (isnan(valueTemp)) {
+    Serial.println("Failed to read from DHT sensor!");
+  }
+  return valueTemp;
+}
+
+float readMoist() {
+  valueMoist = analogRead(pinMoist);
+  valueMoist = map(valueMoist, 1023, 0, 0, 100);                          // invert map to properly show humidity
+
+  return valueMoist;
+}
+
+float readLight() {
+  int light = 0;
+  light = analogRead(pinLight); 
+  valueLight = light/10.23;                      
+
+/* CALCULATE SUN EXPOSURE (TIME) *
+  if (alarmFlag == false) {                                               // continue to monitor while flag is false; alarmFlag is set true after 8 hours
+    if((light > LIGHT) & (upMillis == 0)) {                               // count time only when light is high and when there's no record yet
       upMillis = millis(); 
     }
-    if(lightLev < LIGHT) {
+    if(light < LIGHT) {
       downMillis = millis();                                              // count time when light is low; will keep updating 
     }
 
-    /* TEST MESSAGES
-    Serial.print("Start: ");
-    Serial.println(upMillis);
-    Serial.print("End: ");
-    Serial.println(downMillis); 
-    */
-
     if ((upMillis>0)&(downMillis>upMillis)) {                             // make sure light is high then low at least before calculation
       highDuration = downMillis - upMillis;                               // will depend on the duration set on loop; may move millis functions
-      //Serial.print("Duration: ");
-      //Serial.println(highDuration);
       upMillis = 0;                                                       // make sure previous values aren't used again
       downMillis = 0;
     }
@@ -243,7 +263,10 @@ void light_sensor() {
     Serial.println(upTime);
 
     highDuration = 0;                                                     // reset to 0 so it doesn't update upTime with the same value
-  }else {                                                                 // after set duration (8 hours)
+
+    alarmFlag = false;                                                    // reset alarm; measurement every set alarm minutes
+
+  }else {                                                                 // do after set duration; testing only, proccess occurs in application
     Serial.print("Light: ");
     if(upTime > FULL) {
       Serial.println("FULL");
@@ -254,39 +277,11 @@ void light_sensor() {
     }
   }
 }
-
-void pH_sensor() {
-    float temp = 0.;                                                      // 0x000d is the register address for reading pH sensor
-  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, 0x000d, 1)) {
-    Serial.print("failed to read current! ");
-    Serial.println(ModbusRTUClient.lastError());
-  }else{
-    uint16_t word1 = ModbusRTUClient.read();
-    Serial.print("Word1: ");
-    Serial.println(word1);
-    temp = word1/10.0;
-    Serial.print("temp: ");
-    Serial.println(temp);    
-  }  
-}
-
-/*
-float readpH()
-{
-  float acid = 0.;
-  if (!ModbusRTUClient.requestFrom(0x01, HOLDING_REGISTERS, acidity, 1)) {
-    Serial.print("failed to read value: ");
-    Serial.println(ModbusRTUClient.lastError());
-  }else{
-    uint16_t word1 = ModbusRTUClient.read();
-    acid = word1/10.0;   
-  }  
-  return acid;
-}
 */
+  return valueLight;
+}
 
-/*
-void pH_sensor() {
+float readAcid() {
   digitalWrite(DE, HIGH);                                                 // sets the max485 to send data
 
   delay(10);
@@ -294,7 +289,6 @@ void pH_sensor() {
   for (int j = 0; j < 8; j++) {
     send = pH[j];                                                         // send request to the sensor
     mySerial.write(send);
-    //Serial.print(send, HEX);
   }
 
   delay(10);
@@ -309,8 +303,7 @@ void pH_sensor() {
       Serial.print(values[i], HEX);
     }
   }
-  acidVal = float ((values[3] << 8) | (values[4])) / 10;
-  Serial.print("Acidity: ");
-  Serial.println(acidVal);
+  valueAcid = float ((values[3] << 8) | (values[4])) / 10;
+  
+  return valueAcid;
 }
-*/
